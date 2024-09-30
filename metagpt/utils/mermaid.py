@@ -2,51 +2,94 @@
 # -*- coding: utf-8 -*-
 """
 @Time    : 2023/7/4 10:53
-@Author  : alexanderwu
+@Author  : alexanderwu alitrack
 @File    : mermaid.py
 """
+import asyncio
 import os
-import subprocess
 from pathlib import Path
-from metagpt.config import CONFIG
-from metagpt.const import PROJECT_ROOT
+
+from metagpt.config2 import config
 from metagpt.logs import logger
-from metagpt.utils.common import check_cmd_exists
+from metagpt.utils.common import awrite, check_cmd_exists
 
 
-def mermaid_to_file(mermaid_code, output_file_without_suffix, width=2048, height=2048) -> int:
+async def mermaid_to_file(engine, mermaid_code, output_file_without_suffix, width=2048, height=2048) -> int:
     """suffix: png/svg/pdf
 
     :param mermaid_code: mermaid code
     :param output_file_without_suffix: output filename
     :param width:
     :param height:
-    :return: 0 if succed, -1 if failed
+    :return: 0 if succeed, -1 if failed
     """
     # Write the Mermaid code to a temporary file
-    tmp = Path(f'{output_file_without_suffix}.mmd')
-    tmp.write_text(mermaid_code, encoding='utf-8')
+    dir_name = os.path.dirname(output_file_without_suffix)
+    if dir_name and not os.path.exists(dir_name):
+        os.makedirs(dir_name)
+    tmp = Path(f"{output_file_without_suffix}.mmd")
+    await awrite(filename=tmp, data=mermaid_code)
 
-    if check_cmd_exists('mmdc') != 0:
-        logger.warning(
-            "RUN `npm install -g @mermaid-js/mermaid-cli` to install mmdc")
-        return -1
+    if engine == "nodejs":
+        if check_cmd_exists(config.mermaid.path) != 0:
+            logger.warning(
+                "RUN `npm install -g @mermaid-js/mermaid-cli` to install mmdc,"
+                "or consider changing engine to `playwright`, `pyppeteer`, or `ink`."
+            )
+            return -1
 
-    for suffix in ['pdf', 'svg', 'png']:
-        output_file = f'{output_file_without_suffix}.{suffix}'
-        # Call the `mmdc` command to convert the Mermaid code to a PNG
-        logger.info(f"Generating {output_file}..")
+        for suffix in ["pdf", "svg", "png"]:
+            output_file = f"{output_file_without_suffix}.{suffix}"
+            # Call the `mmdc` command to convert the Mermaid code to a PNG
+            logger.info(f"Generating {output_file}..")
 
-        if CONFIG.puppeteer_config:
-            subprocess.run([CONFIG.mmdc, '-p', CONFIG.puppeteer_config, '-i', str(tmp), '-o',
-                            output_file, '-w', str(width), '-H', str(height)])
+            if config.mermaid.puppeteer_config:
+                commands = [
+                    config.mermaid.path,
+                    "-p",
+                    config.mermaid.puppeteer_config,
+                    "-i",
+                    str(tmp),
+                    "-o",
+                    output_file,
+                    "-w",
+                    str(width),
+                    "-H",
+                    str(height),
+                ]
+            else:
+                commands = [config.mermaid.path, "-i", str(tmp), "-o", output_file, "-w", str(width), "-H", str(height)]
+            process = await asyncio.create_subprocess_shell(
+                " ".join(commands), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
+
+            stdout, stderr = await process.communicate()
+            if stdout:
+                logger.info(stdout.decode())
+            if stderr:
+                logger.warning(stderr.decode())
+    else:
+        if engine == "playwright":
+            from metagpt.utils.mmdc_playwright import mermaid_to_file
+
+            return await mermaid_to_file(mermaid_code, output_file_without_suffix, width, height)
+        elif engine == "pyppeteer":
+            from metagpt.utils.mmdc_pyppeteer import mermaid_to_file
+
+            return await mermaid_to_file(mermaid_code, output_file_without_suffix, width, height)
+        elif engine == "ink":
+            from metagpt.utils.mmdc_ink import mermaid_to_file
+
+            return await mermaid_to_file(mermaid_code, output_file_without_suffix)
+        elif engine == "none":
+            return 0
         else:
-            subprocess.run([CONFIG.mmdc, '-i', str(tmp), '-o',
-                            output_file, '-w', str(width), '-H', str(height)])
+            logger.warning(f"Unsupported mermaid engine: {engine}")
     return 0
 
 
-MMC1 = """classDiagram
+MMC1 = """
+classDiagram
     class Main {
         -SearchEngine search_engine
         +main() str
@@ -76,9 +119,11 @@ MMC1 = """classDiagram
     SearchEngine --> Index
     SearchEngine --> Ranking
     SearchEngine --> Summary
-    Index --> KnowledgeBase"""
+    Index --> KnowledgeBase
+"""
 
-MMC2 = """sequenceDiagram
+MMC2 = """
+sequenceDiagram
     participant M as Main
     participant SE as SearchEngine
     participant I as Index
@@ -94,10 +139,5 @@ MMC2 = """sequenceDiagram
     R-->>SE: return ranked_results
     SE->>S: summarize_results(ranked_results)
     S-->>SE: return summary
-    SE-->>M: return summary"""
-
-
-if __name__ == '__main__':
-    # logger.info(print_members(print_members))
-    mermaid_to_file(MMC1, PROJECT_ROOT / 'tmp/1.png')
-    mermaid_to_file(MMC2, PROJECT_ROOT / 'tmp/2.png')
+    SE-->>M: return summary
+"""
