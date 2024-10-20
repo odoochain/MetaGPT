@@ -43,6 +43,7 @@ extras_require = {
         "llama-index-postprocessor-cohere-rerank==0.1.4",
         "llama-index-postprocessor-colbert-rerank==0.1.1",
         "llama-index-postprocessor-flag-embedding-reranker==0.1.2",
+        # "llama-index-vector-stores-milvus==0.1.23",
         "docx2txt==0.8",
     ],
 }
@@ -109,7 +110,7 @@ setup(
     license="MIT",
     keywords="metagpt multi-agent multi-role programming gpt llm metaprogramming",
     packages=find_packages(exclude=["contrib", "docs", "examples", "tests*"]),
-    python_requires=">=3.9",
+    python_requires=">=3.9, <3.12",
     install_requires=requirements,
     extras_require=extras_require,
     cmdclass={
